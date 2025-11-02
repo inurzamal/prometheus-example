@@ -1,0 +1,3 @@
+/actuator/metrics — list of all metric names
+/actuator/metrics/jvm.memory.used — current heap usage
+/actuator/prometheus — Prometheus text format export
