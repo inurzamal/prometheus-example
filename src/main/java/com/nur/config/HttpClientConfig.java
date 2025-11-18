@@ -2,12 +2,13 @@ package com.nur.config;
 
 import com.nur.config.properties.OAuthProps;
 import lombok.RequiredArgsConstructor;
-
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
-import org.apache.hc.core5.ssl.SSLContexts;
+import org.apache.hc.client5.http.ssl.TlsSocketStrategy;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -26,26 +27,35 @@ public class HttpClientConfig {
 
     @Bean
     public RestTemplate oauthRestTemplate() throws Exception {
-
+        // Load truststore
         try (var in = new FileInputStream(Path.of(oAuthProps.trustStorePath()).toFile())) {
-            var trustStore = KeyStore.getInstance(oAuthProps.trustStoreType());
+            KeyStore trustStore = KeyStore.getInstance(oAuthProps.trustStoreType());
             trustStore.load(in, oAuthProps.trustStorePassword().toCharArray());
 
-            SSLContext sslContext = SSLContexts.custom()
+            // Create SSLContext
+            SSLContext sslContext = SSLContextBuilder.create()
                     .loadTrustMaterial(trustStore, null)
                     .build();
 
-            var connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
-                    .setSSLSocketFactory(SSLConnectionSocketFactoryBuilder.create()
-                            .setSslContext(sslContext)
-                            .build())
-                    .build();
+            // Create a TlsSocketStrategy for classic blocking IO
+            TlsSocketStrategy tlsStrategy = new DefaultClientTlsStrategy(sslContext);
 
+            // Build connection manager with TLS strategy
+            PoolingHttpClientConnectionManager connectionManager =
+                    PoolingHttpClientConnectionManagerBuilder.create()
+                            .setTlsSocketStrategy(tlsStrategy)
+                            // optionally configure max connections etc:
+                            // .setMaxConnTotal(100)
+                            // .setMaxConnPerRoute(20)
+                            .build();
+
+            // Build HttpClient
             HttpClient httpClient = HttpClients.custom()
                     .setConnectionManager(connectionManager)
-                    .evictExpiredConnections()
+                    .evictExpiredConnections() // optional
                     .build();
 
+            // Use HttpClient in RestTemplate
             return new RestTemplate(new HttpComponentsClientHttpRequestFactory(httpClient));
         }
     }
